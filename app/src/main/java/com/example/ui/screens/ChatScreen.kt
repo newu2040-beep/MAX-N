@@ -118,7 +118,9 @@ fun ChatScreen(
 
     var isModelMenuOpen by remember { mutableStateOf(false) }
     var isChatMenuOpen by remember { mutableStateOf(false) }
-    var selectedModel by remember { mutableStateOf(settings.provider.defaultModel) }
+    var selectedModel by remember {
+        mutableStateOf(if (settings.customModel.isNotBlank()) settings.customModel else settings.provider.defaultModel)
+    }
 
     // Uploaded files attachments state
     var attachedFiles by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) } // Pair(Name, summary/type)
@@ -354,7 +356,21 @@ fun ChatScreen(
                     expanded = isModelMenuOpen,
                     onDismissRequest = { isModelMenuOpen = false }
                 ) {
-                    listOf("gemini-3.5-flash", "gemini-3.1-pro", "gpt-4o", "claude-3-5-sonnet", "deepseek-chat").forEach { model ->
+                    val availableModels = mutableListOf(
+                        "gemini-2.5-flash",
+                        "gemini-2.0-flash",
+                        "gpt-4o",
+                        "claude-3-5-sonnet-20241022",
+                        "sonar",
+                        "sonar-pro",
+                        "glm-4-flash",
+                        "deepseek-chat",
+                        "grok-2"
+                    )
+                    if (settings.customModel.isNotBlank() && !availableModels.contains(settings.customModel)) {
+                        availableModels.add(0, settings.customModel)
+                    }
+                    availableModels.forEach { model ->
                         DropdownMenuItem(
                             text = { Text(model) },
                             onClick = {

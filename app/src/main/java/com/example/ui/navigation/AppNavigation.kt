@@ -1,14 +1,13 @@
 package com.example.ui.navigation
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -21,12 +20,17 @@ import com.example.data.preferences.UserPreferencesManager
 import com.example.ui.components.MAXBottomBar
 import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.CodeDevScreen
+import com.example.ui.screens.CustomToolCreatorScreen
+import com.example.ui.screens.DailyMemoryScreen
+import com.example.ui.screens.ExploreScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.PrdGeneratorScreen
 import com.example.ui.screens.ProductivityScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.PromptStudioScreen
+import com.example.ui.screens.ToolCombinationsScreen
+import com.example.ui.screens.ToolRunnerScreen
 import com.example.ui.screens.WelcomeScreen
 import com.example.ui.screens.WritingToolsScreen
 import java.net.URLDecoder
@@ -46,6 +50,7 @@ sealed class Screen(val route: String) {
             }
         }
     }
+    object Explore : Screen("explore")
     object Writing : Screen("writing")
     object Images : Screen("images")
     object Prd : Screen("prd")
@@ -53,13 +58,28 @@ sealed class Screen(val route: String) {
     object Code : Screen("code")
     object Library : Screen("library")
     object Profile : Screen("profile")
+
+    object ToolRunner : Screen("tool_runner/{toolId}?input={input}") {
+        fun createRoute(toolId: String, input: String? = null): String {
+            return if (!input.isNullOrBlank()) {
+                val encoded = URLEncoder.encode(input, StandardCharsets.UTF_8.toString())
+                "tool_runner/$toolId?input=$encoded"
+            } else {
+                "tool_runner/$toolId"
+            }
+        }
+    }
+    object ToolCombinations : Screen("tool_combinations")
+    object DailyMemory : Screen("daily_memory")
+    object CustomToolCreator : Screen("custom_tool_creator")
 }
 
 @Composable
 fun AppNavigation(
     prefsManager: UserPreferencesManager,
     database: AppDatabase,
-    aiService: AIProviderService
+    aiService: AIProviderService,
+    sharedTextFromIntent: String? = null
 ) {
     val navController = rememberNavController()
     val settings by prefsManager.settings.collectAsState()
@@ -67,8 +87,8 @@ fun AppNavigation(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: ""
 
-    // Show bottom bar only on primary dashboard screens
-    val showBottomBar = currentRoute in listOf("home", "library", "profile")
+    // Show bottom bar on primary dashboard screens
+    val showBottomBar = currentRoute in listOf("home", "explore", "library", "profile")
 
     val startDestination = if (settings.hasCompletedOnboarding) Screen.Home.route else Screen.Welcome.route
 
@@ -78,19 +98,19 @@ fun AppNavigation(
                 MAXBottomBar(
                     currentRoute = currentRoute,
                     onNavigate = { target ->
-                        when (target) {
-                            "home" -> navController.navigate(Screen.Home.route) {
-                                popUpTo(Screen.Home.route) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
+                        val destinationRoute = when (target) {
+                            "home" -> Screen.Home.route
+                            "explore" -> Screen.Explore.route
+                            "library" -> Screen.Library.route
+                            "profile" -> Screen.Profile.route
+                            else -> Screen.Home.route
+                        }
+                        navController.navigate(destinationRoute) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
                             }
-                            "explore" -> navController.navigate(Screen.Writing.route)
-                            "library" -> navController.navigate(Screen.Library.route) {
-                                launchSingleTop = true
-                            }
-                            "profile" -> navController.navigate(Screen.Profile.route) {
-                                launchSingleTop = true
-                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
                     }
                 )
@@ -124,6 +144,8 @@ fun AppNavigation(
             composable(Screen.Home.route) {
                 HomeScreen(
                     settings = settings,
+                    customToolDao = database.customToolDao(),
+                    sharedTextFromIntent = sharedTextFromIntent,
                     onNavigateToChat = { prompt ->
                         navController.navigate(Screen.Chat.createRoute(prompt))
                     },
@@ -134,7 +156,91 @@ fun AppNavigation(
                     onNavigateToPrd = { navController.navigate(Screen.Prd.route) },
                     onNavigateToLibrary = { navController.navigate(Screen.Library.route) },
                     onNavigateToProfile = { navController.navigate(Screen.Profile.route) },
+                    onNavigateToToolRunner = { toolId, input ->
+                        navController.navigate(Screen.ToolRunner.createRoute(toolId, input))
+                    },
+                    onNavigateToDailyMemory = { navController.navigate(Screen.DailyMemory.route) },
+                    onNavigateToToolCombinations = { navController.navigate(Screen.ToolCombinations.route) },
+                    onNavigateToExplore = { navController.navigate(Screen.Explore.route) },
                     onToggleThinking = { enabled -> prefsManager.toggleThinkingMode(enabled) }
+                )
+            }
+
+            composable(Screen.Explore.route) {
+                ExploreScreen(
+                    settings = settings,
+                    customToolDao = database.customToolDao(),
+                    onNavigateToToolRunner = { toolId ->
+                        navController.navigate(Screen.ToolRunner.createRoute(toolId, null))
+                    },
+                    onNavigateToDailyMemory = { navController.navigate(Screen.DailyMemory.route) },
+                    onNavigateToToolCombinations = { navController.navigate(Screen.ToolCombinations.route) },
+                    onNavigateToCreateCustomTool = { navController.navigate(Screen.CustomToolCreator.route) }
+                )
+            }
+
+            // Central Tool Runner Route for all 12 tool types
+            composable(
+                route = "tool_runner/{toolId}?input={input}",
+                arguments = listOf(
+                    navArgument("toolId") { type = NavType.StringType },
+                    navArgument("input") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                val toolId = backStackEntry.arguments?.getString("toolId") ?: "bill_expense_organizer"
+                val encodedInput = backStackEntry.arguments?.getString("input")
+                val decodedInput = if (!encodedInput.isNullOrBlank()) {
+                    runCatching { URLDecoder.decode(encodedInput, StandardCharsets.UTF_8.toString()) }.getOrDefault(encodedInput)
+                } else null
+
+                val customTools by database.customToolDao().getAllCustomTools().collectAsState(initial = emptyList())
+                val customEntity = customTools.find { it.id == toolId }
+
+                ToolRunnerScreen(
+                    toolId = toolId,
+                    initialInput = decodedInput,
+                    settings = settings,
+                    aiService = aiService,
+                    libraryDao = database.libraryDao(),
+                    dailyMemoryDao = database.dailyMemoryDao(),
+                    customToolEntity = customEntity,
+                    onBack = { navController.popBackStack() },
+                    onChainToTool = { nextToolId, text ->
+                        navController.navigate(Screen.ToolRunner.createRoute(nextToolId, text))
+                    }
+                )
+            }
+
+            // Tool Combinations Screen (Feature #10)
+            composable(Screen.ToolCombinations.route) {
+                ToolCombinationsScreen(
+                    settings = settings,
+                    aiService = aiService,
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // Daily AI Memory Screen (Feature #7)
+            composable(Screen.DailyMemory.route) {
+                DailyMemoryScreen(
+                    dailyMemoryDao = database.dailyMemoryDao(),
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            // Custom Tool Creator Screen (Feature #11)
+            composable(Screen.CustomToolCreator.route) {
+                CustomToolCreatorScreen(
+                    customToolDao = database.customToolDao(),
+                    onBack = { navController.popBackStack() },
+                    onToolCreated = { newToolId ->
+                        navController.popBackStack()
+                        navController.navigate(Screen.ToolRunner.createRoute(newToolId, null))
+                    }
                 )
             }
 
@@ -218,7 +324,8 @@ fun AppNavigation(
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     settings = settings,
-                    prefsManager = prefsManager
+                    prefsManager = prefsManager,
+                    aiService = aiService
                 )
             }
         }

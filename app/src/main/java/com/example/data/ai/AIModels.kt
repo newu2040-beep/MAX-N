@@ -20,3 +20,10 @@ sealed class AIResult {
     data class Success(val text: String, val thinkingProcess: String? = null) : AIResult()
     data class Error(val message: String) : AIResult()
 }
+
+data class ApiTestResult(
+    val isSuccess: Boolean,
+    val httpCode: Int,
+    val latencyMs: Long,
+    val message: String
+)

@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,21 +25,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -52,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +75,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.data.ai.AIProviderService
+import com.example.data.ai.ApiTestResult
 import com.example.data.preferences.AIProviderType
 import com.example.data.preferences.ThemeSetting
 import com.example.data.preferences.UserGender
@@ -73,16 +84,18 @@ import com.example.data.preferences.UserPreferencesManager
 import com.example.data.preferences.UserSettings
 import com.example.ui.components.MAXButton
 import com.example.ui.components.MAXCard
-import com.example.ui.components.MAXChip
 import com.example.ui.components.MAXStarMark
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
     settings: UserSettings,
     prefsManager: UserPreferencesManager,
+    aiService: AIProviderService,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var nameInput by remember { mutableStateOf(settings.userName) }
     var ageInput by remember { mutableStateOf(settings.userAge) }
@@ -95,8 +108,38 @@ fun ProfileScreen(
     var baseUrlInput by remember { mutableStateOf(settings.customBaseUrl) }
     var modelInput by remember { mutableStateOf(settings.customModel) }
 
+    var backupApiKeyInput by remember { mutableStateOf(settings.backupApiKey) }
+    var isBackupKeyVisible by remember { mutableStateOf(false) }
+    var backupProvider by remember { mutableStateOf(settings.backupProvider) }
+
     var isProviderDropdownOpen by remember { mutableStateOf(false) }
+    var isBackupProviderDropdownOpen by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+
+    // Biometric / Device Screen Lock state
+    var isBiometricallyUnlocked by remember { mutableStateOf(!settings.isBiometricLockEnabled) }
+
+    // API Key live testing states
+    var isTestingPrimary by remember { mutableStateOf(false) }
+    var primaryTestResult by remember { mutableStateOf<ApiTestResult?>(null) }
+
+    var isTestingBackup by remember { mutableStateOf(false) }
+    var backupTestResult by remember { mutableStateOf<ApiTestResult?>(null) }
+
+    val keyguardManager = remember {
+        context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+    }
+
+    val biometricLockLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            isBiometricallyUnlocked = true
+            Toast.makeText(context, "Identity verified. API Keys unlocked.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Authentication cancelled.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -108,12 +151,14 @@ fun ProfileScreen(
         }
     }
 
+    val horizontalPadding = if (settings.isCompactMode) 14.dp else 20.dp
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = horizontalPadding)
     ) {
         item {
             Row(
@@ -133,13 +178,857 @@ fun ProfileScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // User Identity & Customization Card
+        // Display & Compact Mode Card
         item {
             Text(
-                text = "Profile Customization",
+                text = "Display & Layout",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            MAXCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Dark Mode Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Dark Mode",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Compatible with Charcoal Dark and all 5 Pastel themes",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.isDarkMode,
+                            onCheckedChange = { prefsManager.toggleDarkMode(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("dark_mode_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Compact Mode Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Compact UI Mode",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Condenses margins and layout scaling for smaller display phones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.isCompactMode,
+                            onCheckedChange = { prefsManager.toggleCompactMode(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("compact_mode_switch")
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        // Theme Palettes (Light, Dark & Pastels)
+        item {
+            Text(
+                text = "Themes & Pastel Colorways",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            // Primary System / Base Modes
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    ThemeSetting.LIGHT to "Cream Minimal",
+                    ThemeSetting.DARK to "Charcoal Dark",
+                    ThemeSetting.SYSTEM to "Auto System"
+                ).forEach { (mode, label) ->
+                    val isSelected = settings.theme == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable { prefsManager.updateTheme(mode) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                            ),
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = "Pastel Palettes (Supported in both Light and Dark mode)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    ThemeSetting.PASTEL_LAVENDER to "Lavender",
+                    ThemeSetting.PASTEL_MINT to "Mint",
+                    ThemeSetting.PASTEL_PEACH to "Peach",
+                    ThemeSetting.PASTEL_ROSE to "Rose",
+                    ThemeSetting.PASTEL_SKY to "Sky"
+                ).forEach { (mode, label) ->
+                    val isSelected = settings.theme == mode
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable { prefsManager.updateTheme(mode) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 11.sp
+                            ),
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Biometric Security Section
+        item {
+            Text(
+                text = "Security & Privacy",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            MAXCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Fingerprint,
+                                contentDescription = "Biometric Lock",
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Android Biometric / PIN Lock",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Require fingerprint, face, or PIN to view and edit API keys",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = settings.isBiometricLockEnabled,
+                            onCheckedChange = { enabled ->
+                                prefsManager.toggleBiometricLock(enabled)
+                                if (enabled) {
+                                    isBiometricallyUnlocked = false
+                                }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.testTag("biometric_lock_switch")
+                        )
+                    }
+
+                    if (settings.isBiometricLockEnabled && !isBiometricallyUnlocked) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable {
+                                    val intent = keyguardManager?.createConfirmDeviceCredentialIntent(
+                                        "Unlock API Keys",
+                                        "Confirm your screen lock (Fingerprint, Face, or PIN) to view keys"
+                                    )
+                                    if (intent != null) {
+                                        biometricLockLauncher.launch(intent)
+                                    } else {
+                                        // No screen lock is enabled on device
+                                        isBiometricallyUnlocked = true
+                                        Toast.makeText(context, "No lock screen set on device.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.LockOpen,
+                                    contentDescription = "Unlock",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Tap to Unlock Keys with Biometrics / PIN",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Primary AI Provider & API Key
+        item {
+            Text(
+                text = "Primary AI Provider & Model",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            MAXCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 22.dp
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(
+                        text = "Active AI Provider (Gemini, Perplexity, GLM, Claude, OpenAI, Custom)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Box {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { isProviderDropdownOpen = true }
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = settings.provider.displayName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Default Model: ${settings.provider.defaultModel}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = "Select ▾",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = isProviderDropdownOpen,
+                            onDismissRequest = { isProviderDropdownOpen = false }
+                        ) {
+                            AIProviderType.values().forEach { provider ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(provider.displayName, fontWeight = FontWeight.Medium)
+                                            Text(provider.defaultModel, fontSize = 11.sp, color = Color.Gray)
+                                        }
+                                    },
+                                    onClick = {
+                                        prefsManager.updateProvider(provider)
+                                        isProviderDropdownOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // If provider is CUSTOM, GLM, or PERPLEXITY, or user wants manual custom details:
+                    Text(
+                        text = "Custom Model & Base URL (Optional override)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = modelInput,
+                                onValueChange = {
+                                    modelInput = it
+                                    prefsManager.updateModel(it)
+                                },
+                                placeholder = {
+                                    Text(
+                                        settings.provider.defaultModel,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent
+                                ),
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                singleLine = true
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = baseUrlInput,
+                                onValueChange = {
+                                    baseUrlInput = it
+                                    prefsManager.updateBaseUrl(it)
+                                },
+                                placeholder = {
+                                    Text(
+                                        "Custom Base URL",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent
+                                ),
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                singleLine = true
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // API Key Input
+                    Text(
+                        text = "Primary API Key",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (settings.isBiometricLockEnabled && !isBiometricallyUnlocked) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Lock,
+                                    contentDescription = "Locked",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "API Key Hidden • Unlock Above with Biometrics",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Lock,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = apiKeyInput,
+                                    onValueChange = {
+                                        apiKeyInput = it
+                                        prefsManager.updateApiKey(it)
+                                    },
+                                    placeholder = {
+                                        Text(
+                                            text = "Paste your ${settings.provider.displayName} API Key",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent
+                                    ),
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                                    singleLine = true
+                                )
+                                IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isApiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                        contentDescription = "Toggle visibility",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Test API Key Button & Status Badge
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .clickable(enabled = !isTestingPrimary && apiKeyInput.isNotBlank()) {
+                                        isTestingPrimary = true
+                                        primaryTestResult = null
+                                        coroutineScope.launch {
+                                            val res = aiService.testApiKey(
+                                                apiKey = apiKeyInput,
+                                                provider = settings.provider,
+                                                baseUrl = baseUrlInput,
+                                                model = modelInput
+                                            )
+                                            primaryTestResult = res
+                                            isTestingPrimary = false
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isTestingPrimary) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Testing...",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Refresh,
+                                            contentDescription = "Test",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Test Connection",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (primaryTestResult != null) {
+                                val result = primaryTestResult!!
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (result.isSuccess) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (result.isSuccess) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (result.isSuccess) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (result.isSuccess) "Connected (${result.latencyMs}ms)" else "Failed",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        color = if (result.isSuccess) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (primaryTestResult != null && !primaryTestResult!!.isSuccess) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = primaryTestResult!!.message,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Multi-API Keys / Automatic Failover Card
+        item {
+            Text(
+                text = "Multiple API Keys (Automatic Failover)",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+
+            MAXCard(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 22.dp
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(
+                        text = "Seamless Quota Failover",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "If your primary API reaches a rate limit (HTTP 429) or quota exhaustion, MAX-N will automatically switch to this backup provider without interrupting your chats.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Backup Provider",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Box {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { isBackupProviderDropdownOpen = true }
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = backupProvider.displayName,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Change ▾",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = isBackupProviderDropdownOpen,
+                            onDismissRequest = { isBackupProviderDropdownOpen = false }
+                        ) {
+                            AIProviderType.values().forEach { provider ->
+                                DropdownMenuItem(
+                                    text = { Text(provider.displayName) },
+                                    onClick = {
+                                        backupProvider = provider
+                                        prefsManager.updateBackupProvider(provider)
+                                        isBackupProviderDropdownOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "Backup API Key",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (settings.isBiometricLockEnabled && !isBiometricallyUnlocked) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Backup Key Hidden • Unlock Above",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Security,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = backupApiKeyInput,
+                                    onValueChange = {
+                                        backupApiKeyInput = it
+                                        prefsManager.updateBackupApiKey(it)
+                                    },
+                                    placeholder = {
+                                        Text(
+                                            text = "Enter secondary / backup API Key",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    visualTransformation = if (isBackupKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent
+                                    ),
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                                    singleLine = true
+                                )
+                                IconButton(onClick = { isBackupKeyVisible = !isBackupKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isBackupKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                        contentDescription = "Toggle visibility",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Test Backup Key Button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable(enabled = !isTestingBackup && backupApiKeyInput.isNotBlank()) {
+                                        isTestingBackup = true
+                                        backupTestResult = null
+                                        coroutineScope.launch {
+                                            val res = aiService.testApiKey(
+                                                apiKey = backupApiKeyInput,
+                                                provider = backupProvider
+                                            )
+                                            backupTestResult = res
+                                            isTestingBackup = false
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isTestingBackup) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Testing...", style = MaterialTheme.typography.labelSmall)
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Refresh,
+                                            contentDescription = "Test Backup",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Test Backup Key",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (backupTestResult != null) {
+                                val result = backupTestResult!!
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (result.isSuccess) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (result.isSuccess) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (result.isSuccess) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (result.isSuccess) "Verified (${result.latencyMs}ms)" else "Error",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        color = if (result.isSuccess) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Profile Customization Card
+        item {
+            Text(
+                text = "Personal Profile & Persona",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
@@ -150,7 +1039,6 @@ fun ProfileScreen(
                 cornerRadius = 24.dp
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    // Profile Photo and Name row
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
@@ -167,35 +1055,16 @@ fun ProfileScreen(
                             if (avatarUriInput.isNotBlank()) {
                                 AsyncImage(
                                     model = avatarUriInput,
-                                    contentDescription = "Profile picture",
+                                    contentDescription = "Profile Photo",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop
                                 )
                             } else {
-                                Text(
-                                    text = nameInput.take(1).uppercase(),
-                                    style = MaterialTheme.typography.headlineSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                )
-                            }
-
-                            // Camera overlay badge
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(22.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
                                 Icon(
-                                    imageVector = Icons.Outlined.AddPhotoAlternate,
-                                    contentDescription = "Change photo",
-                                    modifier = Modifier.size(13.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    imageVector = Icons.Outlined.Person,
+                                    contentDescription = "Upload Photo",
+                                    modifier = Modifier.size(32.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
                         }
@@ -208,35 +1077,41 @@ fun ProfileScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            OutlinedTextField(
-                                value = nameInput,
-                                onValueChange = {
-                                    nameInput = it
-                                    prefsManager.updateUserName(it)
-                                },
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .testTag("profile_name_input"),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent
-                                ),
-                                textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                singleLine = true
-                            )
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(horizontal = 12.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = nameInput,
+                                    onValueChange = {
+                                        nameInput = it
+                                        prefsManager.updateUserName(it)
+                                    },
+                                    placeholder = { Text("Your Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent
+                                    ),
+                                    textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    singleLine = true
+                                )
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Age and Gender Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Age Input
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Age",
@@ -271,7 +1146,6 @@ fun ProfileScreen(
                             }
                         }
 
-                        // Gender Selector (Male and Female Only as explicitly requested)
                         Column(modifier = Modifier.weight(1.3f)) {
                             Text(
                                 text = "Gender",
@@ -316,7 +1190,6 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // Personality Setting
                     Text(
                         text = "AI Interaction Personality",
                         style = MaterialTheme.typography.labelSmall,
@@ -336,7 +1209,7 @@ fun ProfileScreen(
                                 personalityInput = it
                                 prefsManager.updateUserProfile(ageInput, genderInput, it, avatarUriInput)
                             },
-                            placeholder = { Text("e.g. Visionary, witty, direct, concise, high-agency") },
+                            placeholder = { Text("e.g. Visionary, analytical, direct, concise, high-agency") },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent,
@@ -348,300 +1221,52 @@ fun ProfileScreen(
                             maxLines = 3
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Personality preset chips
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            "Visionary & Bold",
-                            "Analytical & Concise",
-                            "Witty & Creative"
-                        ).forEach { preset ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        personalityInput = preset
-                                        prefsManager.updateUserProfile(ageInput, genderInput, preset, avatarUriInput)
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = preset,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
                 }
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // Theme Palette Selector (Cream, Dark & Pastel Themes)
+        // Thinking Mode & Cognition
         item {
-            Text(
-                text = "Themes & Pastel Palettes",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-            )
-
-            // Primary system/modes
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    ThemeSetting.LIGHT to "Cream Minimal",
-                    ThemeSetting.DARK to "Charcoal Dark",
-                    ThemeSetting.SYSTEM to "Auto"
-                ).forEach { (mode, label) ->
-                    val isSelected = settings.theme == mode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .clickable { prefsManager.updateTheme(mode) }
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
-                            ),
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Pastel Themes Row
-            Text(
-                text = "Pastel Colorways",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    ThemeSetting.PASTEL_LAVENDER to "Lavender",
-                    ThemeSetting.PASTEL_MINT to "Mint",
-                    ThemeSetting.PASTEL_PEACH to "Peach",
-                    ThemeSetting.PASTEL_ROSE to "Rose",
-                    ThemeSetting.PASTEL_SKY to "Sky"
-                ).forEach { (mode, label) ->
-                    val isSelected = settings.theme == mode
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .clickable { prefsManager.updateTheme(mode) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                fontSize = 11.sp
-                            ),
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        // AI Provider Architecture Configuration
-        item {
-            Text(
-                text = "AI Model & Provider",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-            )
-
             MAXCard(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 22.dp
+                cornerRadius = 20.dp
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text(
-                        text = "Active AI Provider",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Box {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { isProviderDropdownOpen = true }
-                                .padding(horizontal = 14.dp, vertical = 12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = settings.provider.displayName,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Change ▾",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        DropdownMenu(
-                            expanded = isProviderDropdownOpen,
-                            onDismissRequest = { isProviderDropdownOpen = false }
-                        ) {
-                            AIProviderType.values().forEach { provider ->
-                                DropdownMenuItem(
-                                    text = { Text(provider.displayName) },
-                                    onClick = {
-                                        prefsManager.updateProvider(provider)
-                                        isProviderDropdownOpen = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // API Key input
-                    Text(
-                        text = "API Key (Optional / Bring Your Own Key)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.Lock,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            OutlinedTextField(
-                                value = apiKeyInput,
-                                onValueChange = {
-                                    apiKeyInput = it
-                                    prefsManager.updateApiKey(it)
-                                },
-                                placeholder = {
-                                    Text(
-                                        text = "Default / Encrypted On-Device",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                    )
-                                },
-                                modifier = Modifier.weight(1f),
-                                visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent
-                                ),
-                                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
-                                singleLine = true
-                            )
-                            IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
-                                Icon(
-                                    imageVector = if (isApiKeyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = "Toggle visibility",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Deep Reasoning / Thinking toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Thinking / Deep Reasoning",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Show step-by-step cognitive reasoning before final outputs",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Switch(
-                            checked = settings.isThinkingModeEnabled,
-                            onCheckedChange = { prefsManager.toggleThinkingMode(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary
-                            )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Thinking / Deep Reasoning",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Emits structural cognitive reasoning prior to final outputs",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    Switch(
+                        checked = settings.isThinkingModeEnabled,
+                        onCheckedChange = { prefsManager.toggleThinkingMode(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // Data & Privacy
+        // Privacy & Reset Card
         item {
-            Text(
-                text = "Privacy & Storage",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-            )
-
             MAXCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -656,27 +1281,27 @@ fun ProfileScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Reset Workspace & Clear Local Data",
+                            text = "Reset Workspace & Clear Local Keys",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.error
                         )
                         Text(
-                            text = "Clears all cached chat history, keys, and saved drafts",
+                            text = "Clears all API keys, local history, and settings safely from this device",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(36.dp))
         }
     }
 
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Reset MAX-N Workspace?") },
-            text = { Text("This will erase all saved library items, chat logs, and preferences from this device.") },
+            title = { Text("Reset Workspace?") },
+            text = { Text("This will erase all stored API keys, preferences, and saved drafts from this phone.") },
             confirmButton = {
                 TextButton(
                     onClick = {

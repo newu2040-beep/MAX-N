@@ -23,15 +23,17 @@ enum class UserGender(val displayName: String) {
 }
 
 enum class AIProviderType(val displayName: String, val defaultModel: String, val baseUrl: String) {
-    GEMINI("Google Gemini", "gemini-3.5-flash", "https://generativelanguage.googleapis.com/"),
+    GEMINI("Google Gemini", "gemini-2.5-flash", "https://generativelanguage.googleapis.com/"),
     OPENAI("OpenAI", "gpt-4o", "https://api.openai.com/v1/"),
-    ANTHROPIC("Anthropic Claude", "claude-3-5-sonnet", "https://api.anthropic.com/v1/"),
+    ANTHROPIC("Anthropic Claude", "claude-3-5-sonnet-20241022", "https://api.anthropic.com/v1/"),
+    PERPLEXITY("Perplexity AI", "sonar", "https://api.perplexity.ai/"),
+    GLM("GLM (Zhipu AI)", "glm-4-flash", "https://open.bigmodel.cn/api/paas/v4/"),
     GROK("xAI Grok", "grok-2", "https://api.x.ai/v1/"),
     DEEPSEEK("DeepSeek", "deepseek-chat", "https://api.deepseek.com/v1/"),
-    MISTRAL("Mistral AI", "mistral-large", "https://api.mistral.ai/v1/"),
+    MISTRAL("Mistral AI", "mistral-large-latest", "https://api.mistral.ai/v1/"),
     OPENROUTER("OpenRouter", "auto", "https://openrouter.ai/api/v1/"),
     COHERE("Cohere", "command-r-plus", "https://api.cohere.ai/v1/"),
-    CUSTOM("Custom Endpoint", "custom-model", "https://api.openai.com/v1/")
+    CUSTOM("Custom Model", "custom-model", "https://api.openai.com/v1/")
 }
 
 data class UserSettings(
@@ -41,10 +43,15 @@ data class UserSettings(
     val userPersonality: String = "Analytical, witty, visionary, high-agency and detail-oriented",
     val userAvatarUri: String = "",
     val theme: ThemeSetting = ThemeSetting.LIGHT,
+    val isDarkMode: Boolean = false,
+    val isCompactMode: Boolean = false,
+    val isBiometricLockEnabled: Boolean = false,
     val provider: AIProviderType = AIProviderType.GEMINI,
     val customApiKey: String = "",
     val customBaseUrl: String = "",
     val customModel: String = "",
+    val backupApiKey: String = "",
+    val backupProvider: AIProviderType = AIProviderType.OPENAI,
     val isThinkingModeEnabled: Boolean = true,
     val hasCompletedOnboarding: Boolean = false,
     val systemInstruction: String = "You are MAX-N, an ultra-intelligent, precise, and sophisticated AI workspace assistant."
@@ -65,10 +72,15 @@ class UserPreferencesManager(context: Context) {
             ?: "Analytical, witty, visionary, high-agency and detail-oriented"
         val userAvatarUri = prefs.getString("user_avatar_uri", "") ?: ""
         val themeStr = prefs.getString("theme", ThemeSetting.LIGHT.name) ?: ThemeSetting.LIGHT.name
+        val isDarkMode = prefs.getBoolean("is_dark_mode", false)
+        val isCompactMode = prefs.getBoolean("is_compact_mode", false)
+        val isBiometricLockEnabled = prefs.getBoolean("is_biometric_lock", false)
         val providerStr = prefs.getString("provider", AIProviderType.GEMINI.name) ?: AIProviderType.GEMINI.name
         val customApiKey = prefs.getString("custom_api_key", "") ?: ""
         val customBaseUrl = prefs.getString("custom_base_url", "") ?: ""
         val customModel = prefs.getString("custom_model", "") ?: ""
+        val backupApiKey = prefs.getString("backup_api_key", "") ?: ""
+        val backupProviderStr = prefs.getString("backup_provider", AIProviderType.OPENAI.name) ?: AIProviderType.OPENAI.name
         val isThinking = prefs.getBoolean("thinking_mode", true)
         val hasCompletedOnboarding = prefs.getBoolean("completed_onboarding", false)
         val systemInstruction = prefs.getString(
@@ -83,10 +95,15 @@ class UserPreferencesManager(context: Context) {
             userPersonality = userPersonality,
             userAvatarUri = userAvatarUri,
             theme = runCatching { ThemeSetting.valueOf(themeStr) }.getOrDefault(ThemeSetting.LIGHT),
+            isDarkMode = isDarkMode,
+            isCompactMode = isCompactMode,
+            isBiometricLockEnabled = isBiometricLockEnabled,
             provider = runCatching { AIProviderType.valueOf(providerStr) }.getOrDefault(AIProviderType.GEMINI),
             customApiKey = customApiKey,
             customBaseUrl = customBaseUrl,
             customModel = customModel,
+            backupApiKey = backupApiKey,
+            backupProvider = runCatching { AIProviderType.valueOf(backupProviderStr) }.getOrDefault(AIProviderType.OPENAI),
             isThinkingModeEnabled = isThinking,
             hasCompletedOnboarding = hasCompletedOnboarding,
             systemInstruction = systemInstruction
@@ -123,6 +140,21 @@ class UserPreferencesManager(context: Context) {
         _settings.value = _settings.value.copy(theme = theme)
     }
 
+    fun toggleDarkMode(enabled: Boolean) {
+        prefs.edit().putBoolean("is_dark_mode", enabled).apply()
+        _settings.value = _settings.value.copy(isDarkMode = enabled)
+    }
+
+    fun toggleCompactMode(enabled: Boolean) {
+        prefs.edit().putBoolean("is_compact_mode", enabled).apply()
+        _settings.value = _settings.value.copy(isCompactMode = enabled)
+    }
+
+    fun toggleBiometricLock(enabled: Boolean) {
+        prefs.edit().putBoolean("is_biometric_lock", enabled).apply()
+        _settings.value = _settings.value.copy(isBiometricLockEnabled = enabled)
+    }
+
     fun updateProvider(provider: AIProviderType) {
         prefs.edit().putString("provider", provider.name).apply()
         _settings.value = _settings.value.copy(provider = provider)
@@ -131,6 +163,16 @@ class UserPreferencesManager(context: Context) {
     fun updateApiKey(key: String) {
         prefs.edit().putString("custom_api_key", key).apply()
         _settings.value = _settings.value.copy(customApiKey = key)
+    }
+
+    fun updateBackupApiKey(key: String) {
+        prefs.edit().putString("backup_api_key", key).apply()
+        _settings.value = _settings.value.copy(backupApiKey = key)
+    }
+
+    fun updateBackupProvider(provider: AIProviderType) {
+        prefs.edit().putString("backup_provider", provider.name).apply()
+        _settings.value = _settings.value.copy(backupProvider = provider)
     }
 
     fun updateBaseUrl(url: String) {

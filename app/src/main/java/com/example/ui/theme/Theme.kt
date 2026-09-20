@@ -120,21 +120,116 @@ private val PastelSkyColorScheme = lightColorScheme(
     outline = PastelSkyBorder
 )
 
+// Dark Mode Pastel Color Schemes
+private val DarkPastelLavenderColorScheme = darkColorScheme(
+    primary = DarkPastelLavenderPrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkPastelLavenderSubtle,
+    onPrimaryContainer = DarkTextPrimary,
+    secondary = DarkPastelLavenderPrimary,
+    onSecondary = DarkBackground,
+    background = DarkPastelLavenderBg,
+    onBackground = DarkTextPrimary,
+    surface = DarkPastelLavenderSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkPastelLavenderSubtle,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkPastelLavenderBorder
+)
+
+private val DarkPastelMintColorScheme = darkColorScheme(
+    primary = DarkPastelMintPrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkPastelMintSubtle,
+    onPrimaryContainer = DarkTextPrimary,
+    secondary = DarkPastelMintPrimary,
+    onSecondary = DarkBackground,
+    background = DarkPastelMintBg,
+    onBackground = DarkTextPrimary,
+    surface = DarkPastelMintSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkPastelMintSubtle,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkPastelMintBorder
+)
+
+private val DarkPastelPeachColorScheme = darkColorScheme(
+    primary = DarkPastelPeachPrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkPastelPeachSubtle,
+    onPrimaryContainer = DarkTextPrimary,
+    secondary = DarkPastelPeachPrimary,
+    onSecondary = DarkBackground,
+    background = DarkPastelPeachBg,
+    onBackground = DarkTextPrimary,
+    surface = DarkPastelPeachSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkPastelPeachSubtle,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkPastelPeachBorder
+)
+
+private val DarkPastelRoseColorScheme = darkColorScheme(
+    primary = DarkPastelRosePrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkPastelRoseSubtle,
+    onPrimaryContainer = DarkTextPrimary,
+    secondary = DarkPastelRosePrimary,
+    onSecondary = DarkBackground,
+    background = DarkPastelRoseBg,
+    onBackground = DarkTextPrimary,
+    surface = DarkPastelRoseSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkPastelRoseSubtle,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkPastelRoseBorder
+)
+
+private val DarkPastelSkyColorScheme = darkColorScheme(
+    primary = DarkPastelSkyPrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkPastelSkySubtle,
+    onPrimaryContainer = DarkTextPrimary,
+    secondary = DarkPastelSkyPrimary,
+    onSecondary = DarkBackground,
+    background = DarkPastelSkyBg,
+    onBackground = DarkTextPrimary,
+    surface = DarkPastelSkySurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkPastelSkySubtle,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkPastelSkyBorder
+)
+
 @Composable
 fun MAXNTheme(
     themeSetting: ThemeSetting = ThemeSetting.LIGHT,
+    isDarkMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
-    val colorScheme = when (themeSetting) {
-        ThemeSetting.SYSTEM -> if (isSystemDark) DarkColorScheme else LightColorScheme
-        ThemeSetting.LIGHT -> LightColorScheme
-        ThemeSetting.DARK -> DarkColorScheme
-        ThemeSetting.PASTEL_LAVENDER -> PastelLavenderColorScheme
-        ThemeSetting.PASTEL_MINT -> PastelMintColorScheme
-        ThemeSetting.PASTEL_PEACH -> PastelPeachColorScheme
-        ThemeSetting.PASTEL_ROSE -> PastelRoseColorScheme
-        ThemeSetting.PASTEL_SKY -> PastelSkyColorScheme
+    val effectivelyDark = isDarkMode || themeSetting == ThemeSetting.DARK || (themeSetting == ThemeSetting.SYSTEM && isSystemDark)
+
+    val colorScheme = if (effectivelyDark) {
+        when (themeSetting) {
+            ThemeSetting.PASTEL_LAVENDER -> DarkPastelLavenderColorScheme
+            ThemeSetting.PASTEL_MINT -> DarkPastelMintColorScheme
+            ThemeSetting.PASTEL_PEACH -> DarkPastelPeachColorScheme
+            ThemeSetting.PASTEL_ROSE -> DarkPastelRoseColorScheme
+            ThemeSetting.PASTEL_SKY -> DarkPastelSkyColorScheme
+            else -> DarkColorScheme
+        }
+    } else {
+        when (themeSetting) {
+            ThemeSetting.SYSTEM -> LightColorScheme
+            ThemeSetting.LIGHT -> LightColorScheme
+            ThemeSetting.DARK -> DarkColorScheme
+            ThemeSetting.PASTEL_LAVENDER -> PastelLavenderColorScheme
+            ThemeSetting.PASTEL_MINT -> PastelMintColorScheme
+            ThemeSetting.PASTEL_PEACH -> PastelPeachColorScheme
+            ThemeSetting.PASTEL_ROSE -> PastelRoseColorScheme
+            ThemeSetting.PASTEL_SKY -> PastelSkyColorScheme
+        }
     }
 
     MaterialTheme(
