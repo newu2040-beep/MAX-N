@@ -1,0 +1,6 @@
+{
+  "name": "MAX-N",
+  "description": "All-in-one AI workspace with intelligent chat, writing assistant, prompt studio, PRD generator, and productivity tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
