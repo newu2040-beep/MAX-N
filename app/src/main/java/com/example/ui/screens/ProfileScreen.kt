@@ -2,7 +2,10 @@ package com.example.ui.screens
 
 import android.app.Activity
 import android.app.KeyguardManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,10 +23,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,10 +36,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Psychology
@@ -158,6 +168,7 @@ fun ProfileScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
+            .imePadding()
             .padding(horizontal = horizontalPadding)
     ) {
         item {
@@ -781,6 +792,246 @@ fun ProfileScreen(
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                 color = MaterialTheme.colorScheme.error
                             )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        // Official AI Websites & Direct API Key Portals
+        item {
+            Text(
+                text = "Official AI Websites & API Key Portals",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+            )
+            Text(
+                text = "Generate authentic API keys directly from official AI developer dashboards.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 10.dp)
+            )
+
+            // DeepSeek Notice Card
+            MAXCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                cornerRadius = 16.dp,
+                backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "DeepSeek Setup & 403 Troubleshooting",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "• Model Names: DeepSeek official models are 'deepseek-chat' (V3) and 'deepseek-reasoner' (R1). Note that 'deepseek-flash' does not exist; MAX-N automatically corrects any alias to 'deepseek-chat'.\n• Account Credits: DeepSeek requires prepaid credits on platform.deepseek.com before API calls can succeed (otherwise Cloudflare returns HTTP 403).",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // List of all AI Providers with direct links
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AIProviderType.values().filter { it != AIProviderType.CUSTOM }.forEach { provider ->
+                    val isActive = settings.provider == provider
+
+                    MAXCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = 18.dp,
+                        borderColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    MAXStarMark(
+                                        size = 14.dp,
+                                        color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = provider.displayName,
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                if (isActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "Active Provider",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "Models: ${provider.supportedModelsHint}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Action buttons row (responsive)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 1. Get Key ↗
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.primary)
+                                        .clickable {
+                                            runCatching {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(provider.officialKeyUrl))
+                                                context.startActivity(intent)
+                                            }.onFailure {
+                                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Key,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(13.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Get Key ↗",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                    }
+                                }
+
+                                // 2. Visit Website
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable {
+                                            runCatching {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(provider.officialWebsite))
+                                                context.startActivity(intent)
+                                            }.onFailure {
+                                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Language,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(13.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "Website",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 11.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                // 3. Select as Active (if not already active)
+                                if (!isActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable {
+                                                prefsManager.updateProvider(provider)
+                                                modelInput = provider.defaultModel
+                                                prefsManager.updateModel(provider.defaultModel)
+                                                Toast.makeText(context, "Switched to ${provider.displayName}", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Set Active",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.sp
+                                            ),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+
+                                // 4. Copy Key Link
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("${provider.displayName} API Key Portal", provider.officialKeyUrl))
+                                        Toast.makeText(context, "Copied ${provider.displayName} portal link", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ContentCopy,
+                                        contentDescription = "Copy portal URL",
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }

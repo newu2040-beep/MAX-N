@@ -93,6 +93,7 @@ fun AppNavigation(
     val startDestination = if (settings.hasCompletedOnboarding) Screen.Home.route else Screen.Welcome.route
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
                 MAXBottomBar(
@@ -122,7 +123,7 @@ fun AppNavigation(
             startDestination = startDestination,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(bottom = innerPadding.calculateBottomPadding())
         ) {
             composable(Screen.Welcome.route) {
                 WelcomeScreen(

@@ -22,18 +22,110 @@ enum class UserGender(val displayName: String) {
     FEMALE("Female")
 }
 
-enum class AIProviderType(val displayName: String, val defaultModel: String, val baseUrl: String) {
-    GEMINI("Google Gemini", "gemini-2.5-flash", "https://generativelanguage.googleapis.com/"),
-    OPENAI("OpenAI", "gpt-4o", "https://api.openai.com/v1/"),
-    ANTHROPIC("Anthropic Claude", "claude-3-5-sonnet-20241022", "https://api.anthropic.com/v1/"),
-    PERPLEXITY("Perplexity AI", "sonar", "https://api.perplexity.ai/"),
-    GLM("GLM (Zhipu AI)", "glm-4-flash", "https://open.bigmodel.cn/api/paas/v4/"),
-    GROK("xAI Grok", "grok-2", "https://api.x.ai/v1/"),
-    DEEPSEEK("DeepSeek", "deepseek-chat", "https://api.deepseek.com/v1/"),
-    MISTRAL("Mistral AI", "mistral-large-latest", "https://api.mistral.ai/v1/"),
-    OPENROUTER("OpenRouter", "auto", "https://openrouter.ai/api/v1/"),
-    COHERE("Cohere", "command-r-plus", "https://api.cohere.ai/v1/"),
-    CUSTOM("Custom Model", "custom-model", "https://api.openai.com/v1/")
+enum class AIProviderType(
+    val displayName: String,
+    val defaultModel: String,
+    val baseUrl: String,
+    val officialWebsite: String,
+    val officialKeyUrl: String,
+    val supportedModelsHint: String
+) {
+    GEMINI(
+        displayName = "Google Gemini",
+        defaultModel = "gemini-2.5-flash",
+        baseUrl = "https://generativelanguage.googleapis.com/",
+        officialWebsite = "https://aistudio.google.com",
+        officialKeyUrl = "https://aistudio.google.com/app/apikey",
+        supportedModelsHint = "gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-pro"
+    ),
+    DEEPSEEK(
+        displayName = "DeepSeek",
+        defaultModel = "deepseek-chat",
+        baseUrl = "https://api.deepseek.com/",
+        officialWebsite = "https://www.deepseek.com",
+        officialKeyUrl = "https://platform.deepseek.com/api_keys",
+        supportedModelsHint = "deepseek-chat (V3), deepseek-reasoner (R1) • Note: 'deepseek-flash' does not exist"
+    ),
+    OPENAI(
+        displayName = "OpenAI",
+        defaultModel = "gpt-4o",
+        baseUrl = "https://api.openai.com/v1/",
+        officialWebsite = "https://openai.com",
+        officialKeyUrl = "https://platform.openai.com/api-keys",
+        supportedModelsHint = "gpt-4o, gpt-4o-mini, o1, o3-mini"
+    ),
+    ANTHROPIC(
+        displayName = "Anthropic Claude",
+        defaultModel = "claude-3-5-sonnet-20241022",
+        baseUrl = "https://api.anthropic.com/v1/",
+        officialWebsite = "https://anthropic.com",
+        officialKeyUrl = "https://console.anthropic.com/settings/keys",
+        supportedModelsHint = "claude-3-5-sonnet-20241022, claude-3-5-haiku"
+    ),
+    GROQ(
+        displayName = "Groq",
+        defaultModel = "llama-3.3-70b-versatile",
+        baseUrl = "https://api.groq.com/openai/v1/",
+        officialWebsite = "https://groq.com",
+        officialKeyUrl = "https://console.groq.com/keys",
+        supportedModelsHint = "llama-3.3-70b-versatile, deepseek-r1-distill-llama-70b"
+    ),
+    PERPLEXITY(
+        displayName = "Perplexity AI",
+        defaultModel = "sonar",
+        baseUrl = "https://api.perplexity.ai/",
+        officialWebsite = "https://www.perplexity.ai",
+        officialKeyUrl = "https://www.perplexity.ai/settings/api",
+        supportedModelsHint = "sonar, sonar-pro, sonar-reasoning"
+    ),
+    GLM(
+        displayName = "GLM (Zhipu AI)",
+        defaultModel = "glm-4-flash",
+        baseUrl = "https://open.bigmodel.cn/api/paas/v4/",
+        officialWebsite = "https://open.bigmodel.cn",
+        officialKeyUrl = "https://open.bigmodel.cn/usercenter/apikeys",
+        supportedModelsHint = "glm-4-flash, glm-4-plus"
+    ),
+    GROK(
+        displayName = "xAI Grok",
+        defaultModel = "grok-2",
+        baseUrl = "https://api.x.ai/v1/",
+        officialWebsite = "https://x.ai",
+        officialKeyUrl = "https://console.x.ai/",
+        supportedModelsHint = "grok-2, grok-beta"
+    ),
+    MISTRAL(
+        displayName = "Mistral AI",
+        defaultModel = "mistral-large-latest",
+        baseUrl = "https://api.mistral.ai/v1/",
+        officialWebsite = "https://mistral.ai",
+        officialKeyUrl = "https://console.mistral.ai/api-keys/",
+        supportedModelsHint = "mistral-large-latest, mistral-small-latest, codestral-latest"
+    ),
+    OPENROUTER(
+        displayName = "OpenRouter",
+        defaultModel = "auto",
+        baseUrl = "https://openrouter.ai/api/v1/",
+        officialWebsite = "https://openrouter.ai",
+        officialKeyUrl = "https://openrouter.ai/keys",
+        supportedModelsHint = "auto, deepseek/deepseek-r1, anthropic/claude-3.5-sonnet"
+    ),
+    COHERE(
+        displayName = "Cohere",
+        defaultModel = "command-r-plus",
+        baseUrl = "https://api.cohere.ai/v1/",
+        officialWebsite = "https://cohere.com",
+        officialKeyUrl = "https://dashboard.cohere.com/api-keys",
+        supportedModelsHint = "command-r-plus, command-r"
+    ),
+    CUSTOM(
+        displayName = "Custom Model",
+        defaultModel = "custom-model",
+        baseUrl = "https://api.openai.com/v1/",
+        officialWebsite = "https://platform.openai.com",
+        officialKeyUrl = "https://platform.openai.com/api-keys",
+        supportedModelsHint = "Any OpenAI-compatible endpoint & model"
+    )
 }
 
 data class UserSettings(

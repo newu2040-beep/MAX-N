@@ -179,6 +179,48 @@ class AIProviderService {
     }
 
     /**
+     * Normalizes and cleans model names across providers to prevent typos like deepseek-flash
+     */
+    fun normalizeModel(provider: AIProviderType, rawModel: String): String {
+        val trimmed = rawModel.trim()
+        if (trimmed.isBlank()) return provider.defaultModel
+
+        return when (provider) {
+            AIProviderType.DEEPSEEK -> {
+                when {
+                    trimmed.equals("deepseek-flash", ignoreCase = true) -> "deepseek-chat"
+                    trimmed.contains("flash", ignoreCase = true) -> "deepseek-chat"
+                    trimmed.equals("r1", ignoreCase = true) -> "deepseek-reasoner"
+                    trimmed.equals("v3", ignoreCase = true) -> "deepseek-chat"
+                    else -> trimmed
+                }
+            }
+            AIProviderType.GEMINI -> {
+                when {
+                    trimmed.equals("gemini-3.5-flash", ignoreCase = true) -> "gemini-2.5-flash"
+                    trimmed.equals("gemini-flash", ignoreCase = true) -> "gemini-2.5-flash"
+                    else -> trimmed
+                }
+            }
+            AIProviderType.GROQ -> {
+                when {
+                    trimmed.equals("deepseek-flash", ignoreCase = true) -> "deepseek-r1-distill-llama-70b"
+                    trimmed.contains("deepseek", ignoreCase = true) -> "deepseek-r1-distill-llama-70b"
+                    trimmed.contains("llama", ignoreCase = true) -> "llama-3.3-70b-versatile"
+                    else -> trimmed
+                }
+            }
+            AIProviderType.OPENAI -> {
+                when {
+                    trimmed.equals("gpt-4", ignoreCase = true) -> "gpt-4o"
+                    else -> trimmed
+                }
+            }
+            else -> trimmed
+        }
+    }
+
+    /**
      * Executes the actual HTTP network call to the selected provider
      */
     private suspend fun executeProviderCall(
@@ -188,19 +230,22 @@ class AIProviderService {
         customBaseUrl: String,
         customModel: String
     ): String = withContext(Dispatchers.IO) {
+        val effectiveModel = normalizeModel(provider, customModel)
+
         when (provider) {
-            AIProviderType.GEMINI -> callGeminiRest(request, apiKey, customModel)
-            AIProviderType.ANTHROPIC -> callAnthropicRest(request, apiKey, customModel)
+            AIProviderType.GEMINI -> callGeminiRest(request, apiKey, effectiveModel)
+            AIProviderType.ANTHROPIC -> callAnthropicRest(request, apiKey, effectiveModel)
             AIProviderType.OPENAI,
             AIProviderType.PERPLEXITY,
             AIProviderType.GLM,
             AIProviderType.GROK,
             AIProviderType.DEEPSEEK,
+            AIProviderType.GROQ,
             AIProviderType.MISTRAL,
             AIProviderType.OPENROUTER,
             AIProviderType.COHERE,
             AIProviderType.CUSTOM -> {
-                callOpenAiCompatibleRest(request, apiKey, provider, customBaseUrl, customModel)
+                callOpenAiCompatibleRest(request, apiKey, provider, customBaseUrl, effectiveModel)
             }
         }
     }
@@ -210,12 +255,7 @@ class AIProviderService {
         apiKey: String,
         customModel: String
     ): String = withContext(Dispatchers.IO) {
-        // Valid Gemini models
-        var model = if (customModel.isNotBlank()) customModel.trim() else "gemini-2.5-flash"
-        if (model == "gemini-3.5-flash") {
-            model = "gemini-2.5-flash"
-        }
-
+        val model = if (customModel.isNotBlank()) customModel.trim() else "gemini-2.5-flash"
         val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
 
         val contentsArray = JSONArray()
@@ -238,14 +278,20 @@ class AIProviderService {
         }
 
         val body = root.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        val httpRequest = Request.Builder().url(url).post(body).build()
+        val httpRequest = Request.Builder()
+            .url(url)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 MAX-N/1.0")
+            .post(body)
+            .build()
 
         val response = httpClient.newCall(httpRequest).execute()
         val responseBody = response.body?.string() ?: ""
 
         if (!response.isSuccessful) {
-            val errorMsg = extractErrorMessage(responseBody)
-            throw RuntimeException("HTTP ${response.code} ($model): $errorMsg")
+            val errorMsg = extractErrorMessage(responseBody, response.code, AIProviderType.GEMINI, model)
+            throw RuntimeException(errorMsg)
         }
 
         val json = JSONObject(responseBody)
@@ -290,6 +336,9 @@ class AIProviderService {
             .url(url)
             .addHeader("x-api-key", apiKey)
             .addHeader("anthropic-version", "2023-06-01")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 MAX-N/1.0")
             .post(body)
             .build()
 
@@ -297,8 +346,8 @@ class AIProviderService {
         val responseBody = response.body?.string() ?: ""
 
         if (!response.isSuccessful) {
-            val errorMsg = extractErrorMessage(responseBody)
-            throw RuntimeException("HTTP ${response.code} ($model): $errorMsg")
+            val errorMsg = extractErrorMessage(responseBody, response.code, AIProviderType.ANTHROPIC, model)
+            throw RuntimeException(errorMsg)
         }
 
         val json = JSONObject(responseBody)
@@ -319,7 +368,7 @@ class AIProviderService {
         val rawBaseUrl = if (customBaseUrl.isNotBlank()) customBaseUrl else provider.baseUrl
         val baseUrl = rawBaseUrl.trimEnd('/') + "/"
         val url = "${baseUrl}chat/completions"
-        val model = if (customModel.isNotBlank()) customModel.trim() else provider.defaultModel
+        val model = normalizeModel(provider, customModel)
 
         val messagesArray = JSONArray()
         if (!request.systemInstruction.isNullOrBlank()) {
@@ -341,6 +390,9 @@ class AIProviderService {
         val httpRequest = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "application/json")
+            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 MAX-N/1.0")
             .post(body)
             .build()
 
@@ -348,8 +400,8 @@ class AIProviderService {
         val responseBody = response.body?.string() ?: ""
 
         if (!response.isSuccessful) {
-            val errorMsg = extractErrorMessage(responseBody)
-            throw RuntimeException("HTTP ${response.code} ($model): $errorMsg")
+            val errorMsg = extractErrorMessage(responseBody, response.code, provider, model)
+            throw RuntimeException(errorMsg)
         }
 
         val json = JSONObject(responseBody)
@@ -377,7 +429,7 @@ class AIProviderService {
                 isSuccess = false,
                 httpCode = 0,
                 latencyMs = 0,
-                message = "API key cannot be blank."
+                message = "API key cannot be blank. Tap 'Get Key ↗' to copy your official key."
             )
         }
 
@@ -421,7 +473,34 @@ class AIProviderService {
         }
     }
 
-    private fun extractErrorMessage(responseBody: String): String {
+    private fun extractErrorMessage(
+        responseBody: String,
+        httpCode: Int = 0,
+        provider: AIProviderType = AIProviderType.GEMINI,
+        model: String = ""
+    ): String {
+        // Detect HTML error responses (like Cloudflare 403 or WAF blocking)
+        val isHtml = responseBody.trimStart().startsWith("<!DOCTYPE", ignoreCase = true) ||
+                responseBody.contains("<html", ignoreCase = true) ||
+                responseBody.contains("<title>", ignoreCase = true)
+
+        if (isHtml || httpCode == 403 || httpCode == 401) {
+            val titleMatch = Regex("<title>(.*?)</title>", RegexOption.IGNORE_CASE)
+                .find(responseBody)?.groupValues?.get(1)?.trim()
+            val titleExtra = if (!titleMatch.isNullOrBlank() && !titleMatch.equals("ERROR", ignoreCase = true)) " ($titleMatch)" else ""
+
+            return when (httpCode) {
+                403 -> "HTTP 403 Forbidden$titleExtra from ${provider.displayName}:\n" +
+                        "• Check Account Credits: DeepSeek and some other providers require topped-up account balance before API calls succeed.\n" +
+                        "• Model Check: Official DeepSeek models are 'deepseek-chat' and 'deepseek-reasoner' (note: 'deepseek-flash' does not exist).\n" +
+                        "• Verify your API key at: ${provider.officialKeyUrl}"
+                401 -> "HTTP 401 Unauthorized: Invalid API key for ${provider.displayName}. Please verify or create a new key at ${provider.officialKeyUrl}"
+                404 -> "HTTP 404 Not Found: Model '$model' or endpoint not found on ${provider.displayName}. Check supported models at ${provider.officialWebsite}"
+                429 -> "HTTP 429 Quota Exceeded: You have reached the rate limit for ${provider.displayName}. Please top up your account or switch to a backup key."
+                else -> "HTTP $httpCode Error: Access denied by ${provider.displayName}$titleExtra. Visit ${provider.officialKeyUrl} to verify credentials."
+            }
+        }
+
         return runCatching {
             val json = JSONObject(responseBody)
             if (json.has("error")) {
@@ -431,10 +510,12 @@ class AIProviderService {
                 } else {
                     json.optString("error", responseBody)
                 }
+            } else if (json.has("message")) {
+                json.optString("message", responseBody)
             } else {
-                responseBody.take(200)
+                responseBody.take(250)
             }
-        }.getOrDefault(responseBody.take(200))
+        }.getOrDefault(responseBody.take(250))
     }
 
     private suspend fun streamTextInChunks(fullText: String, onChunk: suspend (String) -> Unit) {

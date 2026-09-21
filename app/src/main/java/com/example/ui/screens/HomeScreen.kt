@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -152,6 +153,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
+            .imePadding()
             .padding(horizontal = horizontalPadding)
     ) {
         // Top Bar: MAX-N on left, Search & Settings on right
@@ -159,7 +161,7 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -183,7 +185,7 @@ fun HomeScreen(
                     // Search icon pill -> opens Explore / Tool Search
                     Box(
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surface)
                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
@@ -193,7 +195,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = "Search",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -201,7 +203,7 @@ fun HomeScreen(
                     // Settings / Profile pill
                     Box(
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surface)
                             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
@@ -211,7 +213,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Outlined.Tune,
                             contentDescription = "Settings",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
